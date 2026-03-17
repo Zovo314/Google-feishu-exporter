@@ -1,0 +1,6 @@
+.DS_Store
+._*
+*.html
+!popup/popup.html
+node_modules/
+.claude/

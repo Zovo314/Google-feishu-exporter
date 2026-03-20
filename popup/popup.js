@@ -3,6 +3,27 @@ const progressBar = document.getElementById('progressBar');
 const progressFill = document.getElementById('progressFill');
 const exportBtn = document.getElementById('exportBtn');
 const includeImages = document.getElementById('includeImages');
+const pdfTip = document.getElementById('pdfTip');
+
+let selectedFormat = 'html';
+
+const formatLabels = {
+  html: '导出为 HTML',
+  pdf: '导出为 PDF',
+  word: '导出为 Word',
+  markdown: '导出为 Markdown',
+};
+
+// Format selector
+document.querySelectorAll('.format-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.format-btn').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedFormat = btn.dataset.format;
+    exportBtn.textContent = formatLabels[selectedFormat];
+    pdfTip.classList.toggle('show', selectedFormat === 'pdf');
+  });
+});
 
 function setStatus(text, type = '') {
   statusEl.textContent = text;
@@ -19,7 +40,6 @@ function resetProgress() {
   progressFill.style.width = '0%';
 }
 
-// Check if current tab is a Feishu page
 async function checkTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab) return null;
@@ -56,11 +76,16 @@ exportBtn.addEventListener('click', async () => {
       type: 'start-export',
       options: {
         includeImages: includeImages.checked,
+        format: selectedFormat,
       },
     });
 
     if (response && response.success) {
-      setStatus('导出完成！', 'success');
+      if (selectedFormat === 'pdf') {
+        setStatus('已在新标签页打开，请选择「另存为PDF」', 'success');
+      } else {
+        setStatus('导出完成！', 'success');
+      }
       setProgress(100);
     } else {
       setStatus(response?.error || '导出失败', 'error');
@@ -74,5 +99,4 @@ exportBtn.addEventListener('click', async () => {
   }
 });
 
-// Initial check
 checkTab();

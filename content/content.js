@@ -73,6 +73,7 @@
   // ============================================================
 
   async function handleExport(options) {
+    const format = options.format || 'html';
     try {
       reportProgress('正在查找文档内容...', 5);
 
@@ -81,16 +82,12 @@
         throw new Error('未找到文档内容，请确认当前页面是飞书文档');
       }
 
-      // Scroll-capture: scroll through the document, cloning each block
-      // with its styles as it becomes visible in the DOM.
       reportProgress('正在采集文档内容...', 8);
       const wrapper = await scrollCapture(container);
 
-      // Cleanup non-content elements
       reportProgress('正在清理...', 80);
       cleanupClone(wrapper);
 
-      // Convert images to base64
       if (options.includeImages) {
         reportProgress('正在转换图片...', 82);
         await convertImages(wrapper, (done, total) => {
@@ -99,21 +96,53 @@
         });
       }
 
-      // Assemble final HTML
-      reportProgress('正在组装 HTML...', 95);
       const title = getDocTitle();
-      const html = assembleHTML(wrapper, title);
 
-      // Trigger download
-      reportProgress('正在下载...', 97);
-      const result = await chrome.runtime.sendMessage({
-        type: 'download-html',
-        html,
-        filename: title,
-      });
+      if (format === 'markdown') {
+        reportProgress('正在转换为 Markdown...', 95);
+        const mdContent = convertToMarkdown(wrapper, title);
+        reportProgress('正在下载...', 97);
+        const result = await chrome.runtime.sendMessage({
+          type: 'download-markdown',
+          content: mdContent,
+          filename: title,
+        });
+        if (!result.success) throw new Error(result.error || '下载失败');
 
-      if (!result.success) {
-        throw new Error(result.error || '下载失败');
+      } else if (format === 'word') {
+        reportProgress('正在组装 Word 文档...', 95);
+        const html = assembleHTML(wrapper, title);
+        const wordContent = wrapForWord(html);
+        reportProgress('正在下载...', 97);
+        const result = await chrome.runtime.sendMessage({
+          type: 'download-word',
+          content: wordContent,
+          filename: title,
+        });
+        if (!result.success) throw new Error(result.error || '下载失败');
+
+      } else if (format === 'pdf') {
+        reportProgress('正在组装 HTML...', 95);
+        const html = assembleHTML(wrapper, title);
+        reportProgress('正在打开打印预览...', 97);
+        const result = await chrome.runtime.sendMessage({
+          type: 'open-pdf-print',
+          html,
+          filename: title,
+        });
+        if (!result.success) throw new Error(result.error || '打开打印预览失败');
+
+      } else {
+        // Default: HTML
+        reportProgress('正在组装 HTML...', 95);
+        const html = assembleHTML(wrapper, title);
+        reportProgress('正在下载...', 97);
+        const result = await chrome.runtime.sendMessage({
+          type: 'download-html',
+          html,
+          filename: title,
+        });
+        if (!result.success) throw new Error(result.error || '下载失败');
       }
 
       reportProgress('导出完成！', 100);
@@ -753,6 +782,180 @@ ${clone.innerHTML}
 
   function escapeHTML(str) {
     return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // ============================================================
+  // Markdown conversion
+  // ============================================================
+
+  function convertToMarkdown(wrapper, title) {
+    let md = `# ${title}\n\n`;
+    md += domToMarkdown(wrapper, {}).trim();
+    // Clean up excessive blank lines
+    md = md.replace(/\n{3,}/g, '\n\n');
+    return md;
+  }
+
+  function domToMarkdown(node, ctx) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return node.textContent;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return '';
+
+    const tag = node.tagName.toLowerCase();
+
+    // Skip non-content elements
+    if (['script', 'style', 'head', 'noscript'].includes(tag)) return '';
+
+    const childCtx = { ...ctx };
+    const children = () =>
+      [...node.childNodes].map((c) => domToMarkdown(c, childCtx)).join('');
+
+    switch (tag) {
+      case 'h1': return `\n# ${children().trim()}\n`;
+      case 'h2': return `\n## ${children().trim()}\n`;
+      case 'h3': return `\n### ${children().trim()}\n`;
+      case 'h4': return `\n#### ${children().trim()}\n`;
+      case 'h5': return `\n##### ${children().trim()}\n`;
+      case 'h6': return `\n###### ${children().trim()}\n`;
+      case 'p': {
+        const text = children().trim();
+        return text ? `\n${text}\n` : '';
+      }
+      case 'br': return '\n';
+      case 'hr': return '\n---\n';
+      case 'strong':
+      case 'b': {
+        const t = children().trim();
+        return t ? `**${t}**` : '';
+      }
+      case 'em':
+      case 'i': {
+        const t = children().trim();
+        return t ? `*${t}*` : '';
+      }
+      case 'del':
+      case 's': {
+        const t = children().trim();
+        return t ? `~~${t}~~` : '';
+      }
+      case 'code': {
+        if (ctx.inPre) return node.textContent;
+        return `\`${node.textContent}\``;
+      }
+      case 'pre': {
+        const codeEl = node.querySelector('code');
+        const langClass = codeEl ? (codeEl.className.match(/language-(\w+)/) || [])[1] || '' : '';
+        const text = (codeEl || node).textContent;
+        return `\n\`\`\`${langClass}\n${text}\n\`\`\`\n`;
+      }
+      case 'blockquote': {
+        const inner = children().trim();
+        return '\n' + inner.split('\n').map((l) => `> ${l}`).join('\n') + '\n';
+      }
+      case 'a': {
+        const href = node.getAttribute('href') || '';
+        const text = children().trim();
+        if (!text) return '';
+        return href ? `[${text}](${href})` : text;
+      }
+      case 'img': {
+        const src = node.getAttribute('src') || '';
+        const alt = node.getAttribute('alt') || '图片';
+        if (!src) return '';
+        // Skip base64 images in markdown (too large), use placeholder
+        if (src.startsWith('data:')) return `![${alt}](图片)\n`;
+        return `![${alt}](${src})\n`;
+      }
+      case 'ul': {
+        const prefix = '  '.repeat(ctx.listDepth || 0);
+        const items = [...node.children]
+          .filter((c) => c.tagName === 'LI')
+          .map((li) => {
+            const text = domToMarkdown(li, { ...childCtx, listDepth: (ctx.listDepth || 0) + 1, listType: 'ul' }).trim();
+            return `${prefix}- ${text}`;
+          })
+          .join('\n');
+        return `\n${items}\n`;
+      }
+      case 'ol': {
+        const prefix = '  '.repeat(ctx.listDepth || 0);
+        const items = [...node.children]
+          .filter((c) => c.tagName === 'LI')
+          .map((li, i) => {
+            const text = domToMarkdown(li, { ...childCtx, listDepth: (ctx.listDepth || 0) + 1, listType: 'ol' }).trim();
+            return `${prefix}${i + 1}. ${text}`;
+          })
+          .join('\n');
+        return `\n${items}\n`;
+      }
+      case 'li': return children().trim();
+      case 'table': return tableToMarkdown(node);
+      case 'thead':
+      case 'tbody':
+      case 'tfoot':
+      case 'tr':
+      case 'td':
+      case 'th': return children();
+      default: {
+        const text = children();
+        // Block-level elements get newline padding
+        const blockTags = ['div', 'section', 'article', 'main', 'header', 'footer', 'nav', 'aside', 'figure', 'figcaption'];
+        if (blockTags.includes(tag) && text.trim()) {
+          return `\n${text}\n`;
+        }
+        return text;
+      }
+    }
+  }
+
+  function tableToMarkdown(table) {
+    const rows = [...table.querySelectorAll('tr')];
+    if (!rows.length) return '';
+
+    const result = [];
+    rows.forEach((row, idx) => {
+      const cells = [...row.querySelectorAll('td, th')].map((cell) => {
+        return [...cell.childNodes]
+          .map((c) => domToMarkdown(c, {}))
+          .join('')
+          .trim()
+          .replace(/\|/g, '\\|')
+          .replace(/\n/g, ' ');
+      });
+      result.push('| ' + cells.join(' | ') + ' |');
+      if (idx === 0) {
+        result.push('| ' + cells.map(() => '---').join(' | ') + ' |');
+      }
+    });
+    return '\n' + result.join('\n') + '\n';
+  }
+
+  // ============================================================
+  // Word (.doc) conversion — wraps HTML with Office XML namespace
+  // Word and LibreOffice can open this as a native document
+  // ============================================================
+
+  function wrapForWord(html) {
+    // Add Office namespace to root <html> tag so Word recognizes the format
+    return html
+      .replace(
+        '<html lang="zh-CN">',
+        '<html xmlns:o="urn:schemas-microsoft-com:office:office" ' +
+          'xmlns:w="urn:schemas-microsoft-com:office:word" ' +
+          'xmlns="http://www.w3.org/TR/REC-html40" lang="zh-CN">'
+      )
+      .replace(
+        '</head>',
+        `<xml>
+  <w:WordDocument>
+    <w:View>Print</w:View>
+    <w:Zoom>100</w:Zoom>
+    <w:DoNotOptimizeForBrowser/>
+  </w:WordDocument>
+</xml>
+</head>`
+      );
   }
 
   // ============================================================

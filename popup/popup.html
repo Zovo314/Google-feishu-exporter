@@ -51,6 +51,54 @@
       transition: width 0.3s ease;
       width: 0%;
     }
+    .options {
+      margin-bottom: 12px;
+    }
+    .options label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: #646a73;
+      cursor: pointer;
+    }
+    .options input[type="checkbox"] {
+      accent-color: #3370ff;
+    }
+    .format-label {
+      font-size: 12px;
+      color: #8f959e;
+      margin-bottom: 6px;
+    }
+    .format-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .format-btn {
+      padding: 6px 4px;
+      font-size: 12px;
+      font-weight: 500;
+      color: #646a73;
+      background: #f4f5f7;
+      border: 1.5px solid transparent;
+      border-radius: 6px;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.15s;
+      line-height: 1.4;
+    }
+    .format-btn:hover {
+      background: #e8ecff;
+      color: #3370ff;
+    }
+    .format-btn.active {
+      background: #e8ecff;
+      border-color: #3370ff;
+      color: #3370ff;
+    }
+    .format-btn .fmt-icon { display: block; font-size: 16px; margin-bottom: 2px; }
     #exportBtn {
       width: 100%;
       padding: 8px 16px;
@@ -68,20 +116,14 @@
       background: #bbbfc4;
       cursor: not-allowed;
     }
-    .options {
-      margin-bottom: 12px;
+    .pdf-tip {
+      font-size: 11px;
+      color: #8f959e;
+      margin-top: 8px;
+      display: none;
+      line-height: 1.5;
     }
-    .options label {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 13px;
-      color: #646a73;
-      cursor: pointer;
-    }
-    .options input[type="checkbox"] {
-      accent-color: #3370ff;
-    }
+    .pdf-tip.show { display: block; }
   </style>
 </head>
 <body>
@@ -96,10 +138,28 @@
   <div class="options">
     <label>
       <input type="checkbox" id="includeImages" checked>
-      内联图片（base64）
+      内联图片（base64，离线可用）
     </label>
   </div>
+  <div class="format-label">选择导出格式</div>
+  <div class="format-grid">
+    <button class="format-btn active" data-format="html">
+      <span class="fmt-icon">🌐</span>HTML
+    </button>
+    <button class="format-btn" data-format="pdf">
+      <span class="fmt-icon">📄</span>PDF
+    </button>
+    <button class="format-btn" data-format="word">
+      <span class="fmt-icon">📝</span>Word
+    </button>
+    <button class="format-btn" data-format="markdown">
+      <span class="fmt-icon">⬇️</span>MD
+    </button>
+  </div>
   <button id="exportBtn">导出为 HTML</button>
+  <div class="pdf-tip" id="pdfTip">
+    💡 PDF 导出将在新标签页打开文档，请在弹出的打印对话框中选择「另存为PDF」。
+  </div>
   <script src="popup.js"></script>
 </body>
 </html>

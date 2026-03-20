@@ -2,5 +2,6 @@
 ._*
 *.html
 !popup/popup.html
+!pdf-print/print.html
 node_modules/
 .claude/

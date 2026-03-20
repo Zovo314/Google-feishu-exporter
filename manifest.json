@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "飞书文档导出 HTML",
-  "description": "将飞书/Lark文档导出为独立HTML文件，保留格式和图片",
-  "version": "1.0.0",
+  "name": "飞书文档导出器",
+  "description": "将飞书/Lark文档导出为HTML、PDF、Word、Markdown格式，保留完整格式与图片",
+  "version": "1.1.0",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -18,7 +18,10 @@
   },
   "permissions": [
     "activeTab",
-    "downloads"
+    "downloads",
+    "tabs",
+    "scripting",
+    "storage"
   ],
   "host_permissions": [
     "https://*.feishu.cn/*",
@@ -35,6 +38,12 @@
       ],
       "js": ["content/content.js"],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["pdf-print/print.html"],
+      "matches": ["<all_urls>"]
     }
   ]
 }

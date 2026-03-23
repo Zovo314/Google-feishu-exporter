@@ -100,12 +100,13 @@
 
       if (format === 'markdown') {
         reportProgress('正在转换为 Markdown...', 95);
-        const mdContent = convertToMarkdown(wrapper, title);
+        const { mdContent, images } = convertToMarkdown(wrapper, title);
         reportProgress('正在下载...', 97);
         const result = await chrome.runtime.sendMessage({
           type: 'download-markdown',
           content: mdContent,
           filename: title,
+          images,
         });
         if (!result.success) throw new Error(result.error || '下载失败');
 
@@ -789,11 +790,12 @@ ${clone.innerHTML}
   // ============================================================
 
   function convertToMarkdown(wrapper, title) {
+    const images = [];
     let md = `# ${title}\n\n`;
-    md += domToMarkdown(wrapper, {}).trim();
+    md += domToMarkdown(wrapper, { images }).trim();
     // Clean up excessive blank lines
     md = md.replace(/\n{3,}/g, '\n\n');
-    return md;
+    return { mdContent: md, images };
   }
 
   function domToMarkdown(node, ctx) {
@@ -863,8 +865,16 @@ ${clone.innerHTML}
         const src = node.getAttribute('src') || '';
         const alt = node.getAttribute('alt') || '图片';
         if (!src) return '';
-        // Skip base64 images in markdown (too large), use placeholder
-        if (src.startsWith('data:')) return `![${alt}](图片)\n`;
+        if (src.startsWith('data:')) {
+          if (ctx.images) {
+            const mimeMatch = src.match(/^data:image\/(\w+);/);
+            const ext = (mimeMatch ? mimeMatch[1] : 'png').replace('jpeg', 'jpg');
+            const filename = `image-${ctx.images.length + 1}.${ext}`;
+            ctx.images.push({ filename, dataURL: src });
+            return `![${alt}](images/${filename})\n`;
+          }
+          return `![${alt}](图片)\n`;
+        }
         return `![${alt}](${src})\n`;
       }
       case 'ul': {

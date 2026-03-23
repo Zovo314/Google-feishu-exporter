@@ -16,9 +16,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === 'download-markdown') {
-    downloadFile(msg.content, msg.filename + '.md', 'text/markdown')
-      .then((id) => sendResponse({ success: true, downloadId: id }))
-      .catch((err) => sendResponse({ success: false, error: err.message }));
+    const images = msg.images || [];
+    if (images.length > 0) {
+      downloadMarkdownWithImages(msg.content, images, msg.filename)
+        .then((id) => sendResponse({ success: true, downloadId: id }))
+        .catch((err) => sendResponse({ success: false, error: err.message }));
+    } else {
+      downloadFile(msg.content, msg.filename + '.md', 'text/markdown')
+        .then((id) => sendResponse({ success: true, downloadId: id }))
+        .catch((err) => sendResponse({ success: false, error: err.message }));
+    }
     return true;
   }
 
@@ -60,6 +67,31 @@ async function downloadFile(content, filename, mimeType) {
     url: dataURL,
     filename: sanitizeFilename(filename),
     saveAs: true,
+  });
+  return downloadId;
+}
+
+async function downloadMarkdownWithImages(content, images, filename) {
+  const folder = sanitizeFilename(filename);
+
+  // Download each image to {folder}/images/
+  for (const { filename: imgFile, dataURL } of images) {
+    await chrome.downloads.download({
+      url: dataURL,
+      filename: `${folder}/images/${imgFile}`,
+      saveAs: false,
+      conflictAction: 'overwrite',
+    });
+  }
+
+  // Download the markdown file to {folder}/{folder}.md
+  const base64 = btoa(unescape(encodeURIComponent(content)));
+  const mdDataURL = `data:text/markdown;charset=utf-8;base64,${base64}`;
+  const downloadId = await chrome.downloads.download({
+    url: mdDataURL,
+    filename: `${folder}/${folder}.md`,
+    saveAs: false,
+    conflictAction: 'overwrite',
   });
   return downloadId;
 }
